@@ -1,0 +1,654 @@
+---
+title: "QEMU 0.1.0 Linux User-Mode Emulator: Deep Dive"
+subtitle: "Systems Programming & Security Analysis"
+author: "CS Undergraduate Systems Course"
+format:
+  revealjs:
+    theme: default
+    css: custom.css
+    slide-number: true
+    chalkboard: true
+    preview-links: auto
+    code-overflow: wrap
+    toc: true
+    toc-depth: 3
+    toc-location: left
+execute:
+  echo: true
+  warning: false
+---
+
+# QEMU Linux User-Mode Emulator {.title-slide}
+
+## A Deep Dive for Systems Programmers
+
+### Understanding Cross-Architecture Execution & Security Implications
+
+---
+
+## Learning Objectives
+
+::: {.callout-note}
+### By the end of this presentation, you will:
+
+- **Understand** how user-mode emulation differs from full system emulation
+- **Analyze** the security implications of cross-architecture execution
+- **Evaluate** performance trade-offs in binary translation
+- **Implement** basic syscall translation mechanisms
+- **Identify** potential attack vectors in emulation layers
+:::
+
+---
+
+## The Big Picture: What We're Building
+
+### QEMU User-Mode vs System Emulation
+
+| Aspect | User-Mode | System-Mode |
+|--------|-----------|-------------|
+| **Scope** | Single process | Entire system |
+| **Performance** | ~5-10x slower | ~50-100x slower |
+| **Memory** | Shared with host | Separate allocation |
+| **Devices** | Direct host access | Emulated devices |
+| **Security** | Host syscall filtering | Full isolation |
+
+::: {.fragment}
+### Key Insight
+User-mode emulation is like having a **universal translator** for individual programs rather than building an entire virtual country.
+:::
+
+---
+
+## Architecture Overview
+
+```{mermaid}
+graph TD
+    A[Guest Binary<br/>x86 ELF] --> B[ELF Loader]
+    B --> C[Memory Manager]
+    C --> D[CPU State<br/>Registers]
+    D --> E[Instruction Translator]
+    E --> F[Syscall Interface]
+    F --> G[Host Kernel<br/>ARM/MIPS/RISC-V]
+    
+    style A fill:#f9f,stroke:#333
+    style G fill:#9f9,stroke:#333
+```
+
+---
+
+## Memory Layout Deep Dive
+
+### Virtual Memory Mapping
+
+```
+Guest Address Space (x86)        Host Address Space (ARM)
+┌─────────────────┐             ┌─────────────────┐
+│   0xC0000000    │             │   0x7f8c0000    │
+│      Stack      │──────┐      │      Stack      │
+├─────────────────┤      │      ├─────────────────┤
+│   Free Space    │      │      │   Free Space    │
+├─────────────────┤      │      ├─────────────────┤
+│      Heap       │      │      │      Heap       │
+├─────────────────┤      └──────┼─────────────────┤
+│   Data Segment  │             │   Data Segment  │
+├─────────────────┤             ├─────────────────┤
+│   Code Segment  │             │   Code Segment  │
+│   0x08048000    │             │   0x00400000    │
+└─────────────────┘             └─────────────────┘
+```
+
+::: {.callout-warning}
+### Security Note
+Memory mapping creates potential for **information disclosure** through side-channel attacks on shared address spaces.
+:::
+
+---
+
+## CPU State Emulation
+
+### The `CPUX86State` Structure
+
+```c
+typedef struct CPUX86State {
+    uint32_t regs[8];    // EAX, EBX, ECX, EDX, ESI, EDI, ESP, EBP
+    uint32_t eip;        // Instruction pointer
+    uint32_t eflags;     // Status flags: ZF, CF, SF, OF, etc.
+    uint16_t segs[6];    // CS, DS, ES, FS, GS, SS
+    
+    // Security-relevant fields
+    uint32_t cr[5];      // Control registers (memory protection)
+    uint32_t dr[8];      // Debug registers (hardware breakpoints)
+    uint32_t mxcsr;      // SSE control/status
+    
+    // Exception handling
+    jmp_buf jmp_env;     // Longjmp for exception recovery
+} CPUX86State;
+```
+
+::: {.fragment}
+### Critical Security Implication
+Debug registers (`dr[0-7]`) can be used to set **hardware breakpoints** - potential vector for anti-debugging techniques.
+:::
+
+---
+
+## Instruction Translation Pipeline
+
+### Dynamic Binary Translation Process
+
+```{mermaid}
+sequenceDiagram
+    participant G as Guest Code
+    participant T as Translator
+    participant C as Translation Cache
+    participant H as Host CPU
+    
+    G->>T: x86 instruction
+    T->>T: Decode & analyze
+    T->>C: Generate host code
+    C->>H: Execute translated code
+    H-->>G: Return result
+```
+
+### Translation Granularity
+- **Basic blocks**: Single-entry, single-exit sequences
+- **Superblocks**: Extended basic blocks with profiling
+- **Trace-based**: Hot path optimization
+
+---
+
+## System Call Translation Deep Dive
+
+### The `do_syscall` Function
+
+```c
+abi_long do_syscall(CPUX86State *env, 
+                   int num,      // syscall number
+                   abi_long arg1, abi_long arg2, 
+                   abi_long arg3, abi_long arg4,
+                   abi_long arg5, abi_long arg6) {
+    
+    // Security: Validate syscall number
+    if (num < 0 || num >= MAX_SYSCALL) {
+        return -TARGET_ENOSYS;
+    }
+    
+    // Architecture-specific translation
+    int host_num = target_to_host_syscall[num];
+    
+    // Argument marshalling with security checks
+    switch (host_num) {
+        case __NR_open:
+            return translate_open(env, arg1, arg2, arg3);
+        case __NR_mmap:
+            return translate_mmap(env, arg1, arg2, arg3, arg4, arg5, arg6);
+        // ... 300+ syscalls
+    }
+}
+```
+
+---
+
+## Security Analysis: Attack Vectors
+
+### 1. Syscall Filtering Bypasses
+
+::: {.callout-danger}
+### Vulnerability Example
+Malicious binaries can exploit **syscall number confusion** between architectures:
+
+```c
+// x86: syscall 90 = old_mmap
+// ARM: syscall 90 = chmod
+// Result: Unintended file permission changes
+```
+:::
+
+### 2. Memory Corruption Exploits
+
+```c
+// Vulnerable pattern in memory translation
+void *translate_address(target_ulong guest_addr) {
+    // Missing bounds check
+    return host_base + guest_addr;  // Potential OOB write
+}
+```
+
+### 3. Timing Side-Channels
+
+- **Translation cache hits vs misses** reveal code execution patterns
+- **System call latency** varies between emulated vs native execution
+- **Memory access patterns** through shared TLB entries
+
+---
+
+## Thunking: Data Structure Translation
+
+### Complex Type Handling
+
+```c
+// Example: stat structure translation
+typedef struct target_stat {
+    target_ulong st_dev;        // Device ID
+    target_ulong st_ino;        // Inode number
+    target_ulong st_mode;       // File type and permissions
+    target_ulong st_nlink;      // Number of hard links
+    target_ulong st_uid;        // User ID
+    target_ulong st_gid;        // Group ID
+    target_ulong st_size;       // File size
+    target_ulong st_blksize;    // Block size
+    target_ulong st_blocks;     // Number of blocks
+    target_ulong st_atime;      // Access time
+    target_ulong st_mtime;      // Modification time
+    target_ulong st_ctime;      // Status change time
+} target_stat;
+```
+
+### Security Implications
+- **Integer overflow** in size calculations
+- **Sign extension** issues between 32-bit and 64-bit architectures
+- **Alignment differences** causing information leaks
+
+---
+
+## Signal Handling Architecture
+
+### Cross-Architecture Signal Translation
+
+```{mermaid}
+graph LR
+    A[Host Signal] --> B[Signal Handler]
+    B --> C[Architecture Mapping]
+    C --> D[Guest Signal Stack]
+    D --> E[Guest Handler]
+    
+    style A fill:#f96,stroke:#333
+    style E fill:#9f9,stroke:#333
+```
+
+### Signal Frame Construction
+
+```c
+typedef struct target_sigcontext {
+    uint32_t gs, __gsh;
+    uint32_t fs, __fsh;
+    uint32_t es, __esh;
+    uint32_t ds, __dsh;
+    uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
+    uint32_t trapno, err, eip, cs, eflags, esp_at_signal, ss;
+    uint32_t fpstate, oldmask, cr2;
+} target_sigcontext;
+```
+
+::: {.callout-warning}
+### Security Risk
+Signal frames contain **register state** - potential information disclosure through stack reading.
+:::
+
+---
+
+## Performance Analysis
+
+### Translation Overhead Breakdown
+
+| Operation | Native | Emulated | Overhead |
+|-----------|--------|----------|----------|
+| **Simple arithmetic** | 1 cycle | 5-15 cycles | 5-15x |
+| **Memory access** | 1-4 cycles | 10-30 cycles | 3-30x |
+| **System call** | 100-1000 cycles | 200-2000 cycles | 2-20x |
+| **Context switch** | 1000-10000 cycles | 2000-20000 cycles | 2-20x |
+
+### Optimization Strategies
+
+1. **Translation Cache** (TCG)
+   - Cache frequently translated blocks
+   - LRU eviction policy
+   - Self-modifying code detection
+
+2. **Inline Caching**
+   - Direct jump to translated code
+   - Back-patch hot paths
+
+3. **Profile-Guided Optimization**
+   - Runtime profiling of hot paths
+   - Superblock formation
+
+---
+
+## Security Mitigations
+
+### 1. Address Space Layout Randomization (ASLR)
+
+```c
+// QEMU implements guest ASLR independently
+void setup_guest_aslr(CPUX86State *env) {
+    uint32_t stack_random = get_random_32() & 0x7ff;
+    env->regs[R_ESP] = 0xc0000000 - (stack_random << 12);
+    
+    uint32_t mmap_random = get_random_32() & 0x3ffff;
+    mmap_base = 0x40000000 + (mmap_random << 12);
+}
+```
+
+### 2. Seccomp-BPF Integration
+
+```c
+// Filter syscalls at the host level
+struct sock_filter filter[] = {
+    BPF_STMT(BPF_LD+BPF_W+BPF_ABS, offsetof(struct seccomp_data, nr)),
+    BPF_JUMP(BPF_JMP+BPF_JEQ+BPF_K, __NR_open, 0, 1),
+    BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_ALLOW),
+    BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_KILL),
+};
+```
+
+### 3. Capability Dropping
+
+```bash
+# Run QEMU with restricted capabilities
+setcap cap_sys_ptrace,cap_sys_admin+ep qemu-i386
+# Remove unnecessary capabilities
+setcap -r qemu-i386
+```
+
+---
+
+## Debugging & Analysis Tools
+
+### QEMU Monitor Commands
+
+```bash
+# Start with debug output
+./qemu-i386 -d cpu,exec,page /bin/ls
+
+# Enable syscall tracing
+./qemu-i386 -strace /bin/ls
+
+# Memory dump analysis
+./qemu-i386 -d mem /bin/ls
+```
+
+### GDB Integration
+
+```bash
+# Debug guest program
+gdb ./qemu-i386
+(gdb) set args /bin/ls
+(gdb) break do_syscall
+(gdb) run
+```
+
+### Performance Profiling
+
+```bash
+# Profile translation overhead
+perf record -g ./qemu-i386 /bin/ls
+perf report --stdio
+```
+
+---
+
+## Real-World Attack Scenarios
+
+### Case Study 1: Shellcode Evasion
+
+```c
+// x86 shellcode that detects emulation
+xor eax, eax
+cpuid
+// Check for QEMU-specific CPUID responses
+// Real hardware vs emulated differences
+```
+
+### Case Study 2: Timing Attacks
+
+```c
+// Measure rdtsc instruction latency
+uint64_t start = rdtsc();
+// Emulated vs native timing differences
+uint64_t end = rdtsc();
+if ((end - start) > threshold) {
+    // Running under emulation
+    exit(0);
+}
+```
+
+### Case Study 3: Memory Layout Detection
+
+```c
+// Detect shared vs separate address spaces
+void *ptr = mmap(NULL, 4096, PROT_READ|PROT_WRITE, 
+                 MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+// Check if address matches expected guest layout
+```
+
+---
+
+## Complete Execution Walkthrough
+
+### Running `/bin/ls` Step-by-Step
+
+```{mermaid}
+sequenceDiagram
+    participant User
+    participant QEMU
+    participant Loader
+    participant Translator
+    participant Host
+    
+    User->>QEMU: ./qemu-i386 /bin/ls
+    QEMU->>Loader: Parse ELF headers
+    Loader->>QEMU: Setup memory layout
+    QEMU->>Translator: Initialize CPU state
+    Translator->>Host: Begin execution loop
+    
+    loop Execute Instructions
+        Host->>Translator: Fetch x86 instruction
+        Translator->>Host: Generate ARM equivalent
+        Host->>Host: Execute translated code
+    end
+    
+    Host->>User: Display directory listing
+```
+
+### Detailed Startup Sequence
+
+```bash
+# 1. Command line parsing
+./qemu-i386 -strace /bin/ls -la /tmp
+
+# 2. ELF loading
+readelf -h /bin/ls  # Examine ELF headers
+
+# 3. Memory mapping
+cat /proc/$$/maps   # View process memory layout
+
+# 4. Execution begins
+# CPU state initialized
+# EIP set to entry point
+# Stack setup with arguments
+```
+
+---
+
+## Advanced Topics
+
+### 1. Self-Modifying Code Detection
+
+```c
+// Invalidate translation cache on write
+void tlb_protect_code(target_ulong addr) {
+    // Mark page as non-writable
+    // Flush translation cache entries
+    // Reset code generation state
+}
+```
+
+### 2. JIT Compilation Optimizations
+
+```c
+// TCG (Tiny Code Generator) optimizations
+void tcg_optimize(TCGContext *s) {
+    // Constant folding
+    // Dead code elimination
+    // Register allocation
+    // Instruction scheduling
+}
+```
+
+### 3. Multi-threading Support
+
+```c
+// Thread-local CPU state
+__thread CPUX86State *current_env;
+
+// Synchronization primitives
+pthread_mutex_t translation_lock;
+```
+
+---
+
+## Security Research Opportunities
+
+### 1. Fuzzing the Translation Layer
+
+```python
+# AFL++ integration for QEMU
+import afl
+
+# Generate mutated x86 instructions
+def mutate_instruction(data):
+    # Flip bits in instruction stream
+    # Test edge cases in decoder
+    return mutated_data
+
+# Run under QEMU and monitor for crashes
+```
+
+### 2. Side-Channel Analysis
+
+- **Cache timing attacks** on translation cache
+- **Branch prediction** analysis
+- **Memory access pattern** monitoring
+
+### 3. Privilege Escalation Vectors
+
+- **Syscall argument confusion** attacks
+- **Memory layout manipulation**
+- **Signal handler exploitation**
+
+---
+
+## Hands-On Lab Exercises
+
+### Exercise 1: Basic Emulation
+
+```bash
+# 1. Compile a simple x86 program
+cat > hello.c << 'EOF'
+#include <stdio.h>
+int main() {
+    printf("Hello from x86!\n");
+    return 0;
+}
+EOF
+
+# 2. Cross-compile for x86
+x86_64-linux-gnu-gcc -static hello.c -o hello-x86
+
+# 3. Run under emulation
+./qemu-i386 hello-x86
+```
+
+### Exercise 2: Security Analysis
+
+```bash
+# 1. Run with syscall tracing
+./qemu-i386 -strace /bin/ls
+
+# 2. Analyze memory layout
+cat /proc/$(pgrep qemu-i386)/maps
+
+# 3. Check for ASLR effectiveness
+./qemu-i386 -d page /bin/ls
+```
+
+### Exercise 3: Performance Profiling
+
+```bash
+# 1. Time native vs emulated execution
+time /bin/ls /usr/bin | wc -l
+time ./qemu-i386 /bin/ls /usr/bin | wc -l
+
+# 2. Profile translation overhead
+perf stat -e cycles,instructions ./qemu-i386 /bin/ls
+```
+
+---
+
+## Key Takeaways for Systems Programmers
+
+### Technical Insights
+
+1. **Binary Translation is Hard**: Every instruction, every syscall, every edge case
+2. **Security is Layered**: Defense in depth across multiple abstraction layers
+3. **Performance vs Security Trade-offs**: More security checks = slower emulation
+4. **Architecture Matters**: Endianness, word size, calling conventions all matter
+
+### Career Applications
+
+- **Malware Analysis**: Understanding emulation evasion techniques
+- **Security Research**: Finding vulnerabilities in translation layers
+- **Performance Engineering**: Optimizing cross-platform applications
+- **Systems Development**: Building secure virtualization solutions
+
+### Research Directions
+
+- **Hardware-assisted virtualization** (KVM, HVF)
+- **WebAssembly as a target** for cross-platform execution
+- **Formal verification** of translation correctness
+- **Machine learning** for optimization
+
+---
+
+## References & Further Reading
+
+### Academic Papers
+- Bellard, F. "QEMU, a Fast and Portable Dynamic Translator." USENIX 2005.
+- Ford, B. et al. "VXA: A Virtual Architecture for Durable Compressed Archives." USENIX 2001.
+
+### Security Research
+- "Breaking the Sandbox: QEMU Escape Exploits" - Black Hat 2020
+- "Side-Channel Attacks on Dynamic Binary Translation" - IEEE S&P 2021
+
+### Documentation
+- [QEMU Internals Documentation](https://qemu.readthedocs.io)
+- [Linux Syscall Reference](https://man7.org/linux/man-pages/man2/syscalls.2.html)
+- [Intel Software Developer Manuals](https://software.intel.com/content/www/us/en/develop/articles/intel-sdm.html)
+
+### Tools & Resources
+- [QEMU Source Code](https://github.com/qemu/qemu)
+- [Radare2 for Binary Analysis](https://rada.re/n/)
+- [Ghidra for Reverse Engineering](https://ghidra-sre.org/)
+
+---
+
+## Questions & Discussion
+
+### Topics for Further Exploration
+
+1. How would you implement syscall filtering for security?
+2. What are the implications of shared vs separate address spaces?
+3. How can we detect and prevent emulation evasion techniques?
+4. What are the trade-offs between static and dynamic translation?
+
+### Contact & Resources
+
+- Course GitHub: [github.com/your-course/qemu-analysis](https://github.com)
+- Office Hours: Tuesdays 2-4pm, CS Building Room 301
+- Discussion Forum: Piazza course page
+
+::: {.callout-tip}
+### Next Steps
+Try running your own programs under emulation and analyze the security implications. Document any interesting findings!
+:::
