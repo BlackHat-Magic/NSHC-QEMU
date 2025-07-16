@@ -1,6 +1,6 @@
 # QEMU 0.1.0 Linux User-Mode Emulator Slideshow
 
-A comprehensive Quarto slideshow explaining QEMU 0.1.0 Linux user-mode emulation for undergraduate computer science students focusing on systems programming and security.
+A comprehensive Quarto slideshow explaining QEMU 0.1.0 Linux user-mode emulation
 
 ## Overview
 
