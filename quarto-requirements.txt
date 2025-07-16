@@ -1,0 +1,4 @@
+quarto
+pandoc
+mermaid-filter
+reveal.js

@@ -1,0 +1,323 @@
+---
+title: "QEMU 0.1.0 Linux User-Mode Emulator"
+subtitle: "A Brief Explanation"
+author: "Luke Henderson"
+format:
+  revealjs:
+    theme: default
+    css: custom.css
+    slide-number: true
+    chalkboard: true
+    preview-links: auto
+    code-overflow: wrap
+    toc: false
+execute:
+  echo: false
+  warning: false
+---
+
+## Learning Objectives
+
+::: {.callout-note}
+### By the end of this presentation, you will:
+
+- **Understand** how user-mode emulation differs from full system emulation
+- **Analyze** the security implications of cross-architecture execution
+- **Evaluate** performance trade-offs in binary translation
+- **Implement** basic syscall translation mechanisms
+- **Identify** potential attack vectors in emulation layers
+:::
+
+---
+
+## What is QEMU
+
+- A CPU emulator that recreates hardware of a given CPU in software
+- **Not** a full virtual machine; Analogy:
+    - You want to test a tire that doesn't fit your car
+    - You *could* build a whole new car that fits it (VM)
+    - *Or* you could just build the wheel & suspension arm that fits it (QEMU)
+- QEMU doesn't run an OS; just ***one*** application
+
+---
+
+## How Programs Run
+
+:::columns
+:::{.column width="50%"}
+### "Bare Metal"
+
+```{mermaid}
+graph LR
+    A[Machine Code] --> B[Hardware]
+```
+
+- Machine code is run directly on your CPU
+- Code was compiled for your specific platform
+:::
+
+:::{.column width="50%"}
+### Emulator (QEMU)
+
+```{mermaid}
+graph LR
+    A[Machine Code 1] --> B[QEMU]
+    B --> C[Machine Code 2]
+    C --> D[Hardware]
+```
+
+- Machine code gets translated to your CPU
+- Allows you to run code compiled for other systems (e.g., ARM code on x86)
+:::
+:::
+
+---
+
+## Instruction Translation Pipeline
+
+### Dynamic Binary Translation Process
+
+```{mermaid}
+sequenceDiagram
+    participant G as Guest Code
+    participant T as Translator
+    participant C as Translation Cache
+    participant H as Host CPU
+    
+    G->>T: x86 instruction
+    T->>T: Decode & analyze
+    T->>C: Generate host code
+    C->>H: Execute translated code
+    H-->>G: Return result
+```
+
+- Translation looks a lot like compilation
+
+<!-- ---
+
+## Translation Granularity
+- **Basic blocks**: Single-entry, single-exit sequences
+- **Superblocks**: Extended basic blocks with profiling
+- **Trace-based**: Hot path optimization
+
+--- -->
+
+## Translation Process
+
+- **Instructions:** Equivalent instructions between architectures
+- **Memory Addresses:** Where the data is stored gets remapped
+- **Syscalls:** Asking the kernel to do something gets translated
+    - Syscalls are filtered for security
+- *Entire* CPU hardware is emulated; not just on-the-fly translation of instructions
+    - Includes registers, etc.
+
+---
+
+## The Entry Point
+
+**Location:** `linux-user/main.c:184`
+
+E.g., if you type `./qemu-i386 /bin/ls`:
+
+1. **Command Parsing:** Looks at what you typed
+    - `-d` flag = "Debug mode; log everything"
+    - `/bin/ls` = "this is the binary to run"
+    - Everything after -> arguments for guest program
+
+2. **ELF Loading:**
+    - Unpacking the machine code like unpacking a suitcase
+    - Where to put code in memory
+    - Where data goes
+    - How big should the stack be?
+    - Where to start executing
+
+---
+
+## Memory Layout
+
+
+Host and guest architecture memory look different. QEMU creates a **translation layer** between.
+
+```{mermaid}
+graph TD
+    G[Host Memory
+    <br />0x7f8c0000] --> H[QEMU's recreation
+    <br />of guest memory layout]
+    H --> I[Stack mapping]
+    H --> J[Heap mapping]
+    H --> K[Data mapping]
+    H --> L[Code mapping]
+    
+    style G fill:#ff9,stroke:#333
+```
+
+---
+
+## CPU State Emulation
+
+### The `CPUX86State` Structure
+
+```c
+typedef struct CPUX86State {
+    uint32_t regs[8];   // The 8 main registers (EAX, EBX, ECX, etc.)
+                        // 8 places where the CPU can perform
+                        // operations
+
+    uint32_t eip;       // Instruction pointer
+                        // "What line of code do I execute next?"
+
+    uint32_t eflags;    // Status flags: like a sticky note at your
+                        // desk saying "last calculation was zero"
+                        // or "there was a carry"
+
+    uint16_t segs[6];   // Segment registers
+
+    // ...
+```
+
+---
+
+## CPU State Continued
+
+```c
+    // ...
+
+    // Security-relevant fields
+    uint32_t cr[5];      // Control registers (memory protection)
+
+    uint32_t dr[8];      // Debug registers (hardware breakpoints)
+
+    uint32_t mxcsr;      // SSE control/status
+    
+    // Exception handling
+    jmp_buf jmp_env;     // Longjmp for exception recovery
+} CPUX86State;
+```
+
+::: {.callout-warning}
+### Security Note
+Debug registers (`dr[0-7]`) can be used to set **hardware breakpoints** - potential vector for anti-debugging techniques.
+:::
+
+---
+
+## System Call Translation
+
+**What happens when a guest program wants to open a file**:
+
+1. **Guest program**: "I want to open /etc/passwd"
+2. **x86 way**: Execute `int 0x80` instruction (like picking up a special phone)
+3. **QEMU intercepts**: "Ah, they're trying to make a system call!"
+4. **Translation**: 
+   - Map x86 syscall number to host syscall number
+   - Convert all parameters (file paths, flags, etc.)
+   - Handle any endianness issues
+5. **Host execution**: Actually open the file on the real system
+6. **Return translation**: Convert the result back to what x86 expects
+
+---
+
+## System Call Translation
+
+```c
+// When EXCP0D_GPF happens, check if it's a syscall
+if (pc[0] == 0xcd && pc[1] == 0x80) {  // x86 syscall instruction
+    env->eip += 2;  // Skip past the syscall instruction
+    env->regs[R_EAX] = do_syscall(env, 
+                                  env->regs[R_EAX],  // syscall number
+                                  env->regs[R_EBX],  // arg1
+                                  env->regs[R_ECX],  // arg2
+                                  ...);
+}
+```
+
+---
+
+## Thunking: Data Structure Translation
+
+- Basically just translate guest data types to host data types
+    - e.g., endianness
+    - word size
+    - ARM long == x86 long??
+
+```c
+typedef enum argtype {
+    TYPE_NULL,      // Nothing
+    TYPE_CHAR,      // Single character
+    TYPE_SHORT,     // 16-bit number
+    TYPE_INT,       // 32-bit number
+    TYPE_LONG,      // 32/64-bit depending on architecture
+    TYPE_PTRVOID,   // Pointer to unknown data
+    TYPE_STRUCT,    // Complex structure
+} argtype;
+```
+
+---
+
+## Signal Handling Architecture
+
+**What are signals?** They're like notifications from the operating system: (timer expired, user pressed Ctrl-C, etc.)
+
+**The challenge**: The guest and host give signal differently.
+
+**Translation process**:
+
+1. **Host signal arrives** (e.g., SIGINT for Ctrl-C)
+2. **QEMU receives it** and thinks: "What would this be in x86 terms?"
+3. **Convert signal numbers** (SIGINT might be different numbers on different systems)
+4. **Convert signal information** (where did it happen, what was the program doing)
+5. **Deliver to guest** in the format it expects
+
+**Key structures**:
+```c
+typedef struct {
+    target_ulong sig[TARGET_NSIG_WORDS];  // Which signals are pending
+} target_sigset_t;
+```
+
+---
+
+## Error Handling
+
+**Types of exceptions**:
+
+- **Divide by zero**: Math error
+- **Page fault**: Tried to access memory that doesn't exist
+- **General protection fault**: Tried to do something illegal
+- **System call**: Actually a planned exception for OS requests
+
+**How QEMU handles them**:
+```c
+// Exception codes from cpu-i386.h
+#define EXCP00_DIVZ    1   // Divide by zero
+#define EXCP0D_GPF     14  // General protection fault
+#define EXCP0E_PAGE    15  // Page fault
+#define EXCP_INTERRUPT 256 // External interrupt
+```
+
+---
+
+Running `/bin/ls` Step-by-Step
+
+```{mermaid}
+sequenceDiagram
+    participant User
+    participant QEMU
+    participant Loader
+    participant Translator
+    participant Host
+    
+    User->>QEMU: ./qemu-i386 /bin/ls
+    QEMU->>Loader: Parse ELF headers
+    Loader->>QEMU: Setup memory layout
+    QEMU->>Translator: Initialize CPU state
+    Translator->>Host: Begin execution loop
+    
+    loop Execute Instructions
+        Host->>Translator: Fetch x86 instruction
+        Translator->>Host: Generate ARM equivalent
+        Host->>Host: Execute translated code
+    end
+    
+    Host->>User: Display directory listing
+```

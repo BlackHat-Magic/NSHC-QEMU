@@ -1,0 +1,200 @@
+:root {
+  --primary-color: #2c3e50;
+  --secondary-color: #3498db;
+  --accent-color: #e74c3c;
+  --background-color: #f8f9fa;
+  --text-color: #2c3e50;
+  --code-background: #f4f4f4;
+  --border-color: #dee2e6;
+}
+
+/* Title slide styling */
+.title-slide h1 {
+  color: var(--primary-color);
+  font-size: 2.0em;
+  font-weight: bold;
+  margin-bottom: 0.5em;
+}
+
+.title-slide h2 {
+  color: var(--secondary-color);
+  font-size: 1.5em;
+  margin-bottom: 1em;
+}
+
+.title-slide h3 {
+  color: var(--text-color);
+  font-size: 1.0em;
+  font-style: italic;
+}
+
+/* Code blocks */
+pre code {
+  background-color: var(--code-background);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1em;
+  font-size: 0.5em;
+  line-height: 1.4;
+}
+
+/* Tables */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+
+th, td {
+  border: 1px solid var(--border-color);
+  padding: 0.75em;
+  text-align: left;
+}
+
+th {
+  background-color: var(--primary-color);
+  color: white;
+  font-weight: bold;
+}
+
+/* Callouts */
+.callout {
+  border-left: 4px solid var(--secondary-color);
+  background-color: rgba(52, 152, 219, 0.1);
+  padding: 1em;
+  margin: 1em 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.callout-note {
+  border-left-color: var(--secondary-color);
+  background-color: rgba(52, 152, 219, 0.1);
+}
+
+.callout-warning {
+  border-left-color: #f39c12;
+  background-color: rgba(243, 156, 18, 0.1);
+}
+
+.callout-danger {
+  border-left-color: var(--accent-color);
+  background-color: rgba(231, 76, 60, 0.1);
+}
+
+.callout-tip {
+  border-left-color: #27ae60;
+  background-color: rgba(39, 174, 96, 0.1);
+}
+
+/* Mermaid diagrams */
+.mermaid {
+  text-align: center;
+  margin: 1em 0;
+}
+
+/* Fragments */
+.fragment {
+  opacity: 0.3;
+  transition: opacity 0.3s ease;
+}
+
+.fragment.visible {
+  opacity: 1;
+}
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--primary-color);
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+h1 {
+  font-size: 2.0em;
+  border-bottom: 2px solid var(--secondary-color);
+  padding-bottom: 0.3em;
+}
+
+h2 {
+  font-size: 1.5em;
+  color: var(--secondary-color);
+}
+
+h3 {
+  font-size: 1.0em;
+  color: var(--text-color);
+}
+
+/* Lists */
+ul, ol {
+  margin: 1em 0;
+  padding-left: 2em;
+}
+
+li {
+  font-size: 0.85em;
+  margin: 0.5em 0;
+  line-height: 1.2;
+}
+
+/* Code inline */
+code {
+  background-color: var(--code-background);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* Blockquotes */
+blockquote {
+  border-left: 4px solid var(--border-color);
+  padding-left: 1em;
+  font-style: italic;
+  color: #666;
+}
+
+/* Reveal.js specific */
+.reveal .slides section {
+  text-align: left;
+}
+
+.reveal .slides section.center {
+  text-align: center;
+}
+
+.reveal pre code {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* Slide transitions */
+.reveal .slides section[data-transition="slide"] {
+  transition: transform 0.3s ease;
+}
+
+/* Progress bar */
+.reveal .progress {
+  color: var(--secondary-color);
+}
+
+/* Controls */
+.reveal .controls {
+  color: var(--secondary-color);
+}
+
+/* Chalkboard */
+.reveal .chalkboard-button {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+/* Print styles */
+@media print {
+  .reveal .slides section {
+    page-break-after: always;
+  }
+  
+  .fragment {
+    opacity: 1 !important;
+  }
+}
