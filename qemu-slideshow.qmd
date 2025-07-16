@@ -269,13 +269,6 @@ typedef enum argtype {
 4. **Convert signal information** (where did it happen, what was the program doing)
 5. **Deliver to guest** in the format it expects
 
-**Key structures**:
-```c
-typedef struct {
-    target_ulong sig[TARGET_NSIG_WORDS];  // Which signals are pending
-} target_sigset_t;
-```
-
 ---
 
 ## Error Handling
