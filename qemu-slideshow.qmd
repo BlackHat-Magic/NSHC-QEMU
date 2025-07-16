@@ -4,8 +4,9 @@ subtitle: "A Brief Explanation"
 author: "Luke Henderson"
 format:
   revealjs:
-    theme: default
-    css: custom.css
+    theme: dark
+    css: [custom.css, catppuccin-mocha.css]
+    highlight-style: monokai
     slide-number: true
     chalkboard: true
     preview-links: auto

@@ -1,0 +1,143 @@
+/* Catppuccin Mocha Theme for Quarto */
+
+:root {
+  --rosewater: #f5e0dc;
+  --flamingo: #f2cdcd;
+  --pink: #f5c2e7;
+  --mauve: #cba6f7;
+  --red: #f38ba8;
+  --maroon: #eba0ac;
+  --peach: #fab387;
+  --yellow: #f9e2af;
+  --green: #a6e3a1;
+  --teal: #94e2d5;
+  --sky: #89dceb;
+  --sapphire: #74c7ec;
+  --blue: #89b4fa;
+  --lavender: #b4befe;
+  --text: #cdd6f4;
+  --subtext1: #bac2de;
+  --subtext0: #a6adc8;
+  --overlay2: #9399b2;
+  --overlay1: #7f849c;
+  --overlay0: #6c7086;
+  --surface2: #585b70;
+  --surface1: #45475a;
+  --surface0: #313244;
+  --base: #1e1e2e;
+  --mantle: #181825;
+  --crust: #11111b;
+}
+
+.reveal {
+  background-color: var(--base);
+  color: var(--text);
+}
+
+.reveal h1,
+.reveal h2,
+.reveal h3,
+.reveal h4,
+.reveal h5,
+.reveal h6 {
+  color: var(--mauve);
+}
+
+.reveal a {
+  color: var(--blue);
+}
+
+.reveal a:hover {
+  color: var(--sapphire);
+}
+
+.reveal code {
+  color: var(--green);
+  background-color: var(--surface0);
+}
+
+.reveal pre {
+  background-color: var(--surface0);
+  color: var(--text);
+}
+
+.reveal blockquote {
+  background-color: var(--surface0);
+  border-left: 4px solid var(--lavender);
+}
+
+.reveal .controls {
+  color: var(--subtext0);
+}
+
+.reveal .progress {
+  background: var(--surface0);
+  color: var(--mauve);
+}
+
+.reveal .slide-number {
+  color: var(--subtext0);
+}
+
+/* Callout styling */
+.reveal .callout {
+  border-left-color: var(--blue);
+  background-color: var(--surface0);
+}
+
+.reveal .callout-note {
+  border-left-color: var(--blue);
+}
+
+.reveal .callout-warning {
+  border-left-color: var(--peach);
+}
+
+.reveal .callout-important {
+  border-left-color: var(--red);
+}
+
+.reveal .callout-tip {
+  border-left-color: var(--green);
+}
+
+/* Fix callout title background */
+.reveal .callout-header {
+  background-color: var(--surface0);
+}
+
+.reveal .callout-title {
+  background-color: var(--surface0)!important;
+}
+
+/* Table styling */
+.reveal table {
+  border-color: var(--surface1);
+}
+
+.reveal table th {
+  background-color: var(--surface1);
+  color: var(--text);
+}
+
+.reveal table td {
+  border-color: var(--surface1);
+}
+
+/* Mermaid diagrams */
+.reveal .mermaid .node rect,
+.reveal .mermaid .node circle,
+.reveal .mermaid .node ellipse,
+.reveal .mermaid .node polygon,
+.reveal .mermaid .node path {
+  fill: var(--surface1);
+  stroke: var(--surface2);
+}
+
+.reveal .mermaid .edgePath .path {
+  stroke: var(--subtext0);
+}
+
+.reveal .mermaid .label {
+  color: var(--text);
+}
