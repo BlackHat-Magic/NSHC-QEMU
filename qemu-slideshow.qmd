@@ -17,20 +17,6 @@ execute:
   warning: false
 ---
 
-## Learning Objectives
-
-::: {.callout-note}
-### By the end of this presentation, you will:
-
-- **Understand** how user-mode emulation differs from full system emulation
-- **Analyze** the security implications of cross-architecture execution
-- **Evaluate** performance trade-offs in binary translation
-- **Implement** basic syscall translation mechanisms
-- **Identify** potential attack vectors in emulation layers
-:::
-
----
-
 ## What is QEMU
 
 - A CPU emulator that recreates hardware of a given CPU in software
