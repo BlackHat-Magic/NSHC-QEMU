@@ -33,8 +33,11 @@ execute:
 ## What is QEMU
 
 - A CPU emulator that recreates hardware of a given CPU in software
-- **Not** a full virtual machine
-    - Car tire analogy
+- **Not** a full virtual machine; Analogy:
+    - You want to test a tire that doesn't fit your car
+    - You *could* build a whole new car that fits it (VM)
+    - *Or* you could just build the wheel & suspension arm that fits it (QEMU)
+- QEMU doesn't run an OS; just ***one*** application
 
 ---
 
@@ -132,51 +135,21 @@ E.g., if you type `./qemu-i386 /bin/ls`:
 
 ## Memory Layout
 
+
+Host and guest architecture memory look different. QEMU creates a **translation layer** between.
+
+```{mermaid}
+graph TD
+    G[Host Memory
+    <br />0x7f8c0000] --> H[QEMU's recreation
+    <br />of guest memory layout]
+    H --> I[Stack mapping]
+    H --> J[Heap mapping]
+    H --> K[Data mapping]
+    H --> L[Code mapping]
+    
+    style G fill:#ff9,stroke:#333
 ```
-Guest Address Space (x86)        Host Address Space (ARM)
-┌─────────────────┐             ┌─────────────────┐
-│   0xC0000000    │             │   0x7f8c0000    │
-│      Stack      │──────┐      │      Stack      │
-├─────────────────┤      │      ├─────────────────┤
-│   Free Space    │      │      │   Free Space    │
-├─────────────────┤      │      ├─────────────────┤
-│      Heap       │      │      │      Heap       │
-├─────────────────┤      └──────┼─────────────────┤
-│   Data Segment  │             │   Data Segment  │
-├─────────────────┤             ├─────────────────┤
-│   Code Segment  │             │   Code Segment  │
-│   0x08048000    │             │   0x00400000    │
-└─────────────────┘             └─────────────────┘
-```
-
-```
-High Memory (0xC0000000)
-┌─────────────────┐
-│      Stack      │ ← Like the kitchen counter - temporary workspace
-├─────────────────┤
-│       ↓         │
-│   Free Space    │ ← Empty rooms you can expand into
-│       ↑         │
-├─────────────────┤
-│      Heap       │ ← Like storage closets - grows as needed
-├─────────────────┤
-│   Data Segment  │ ← Your furniture - permanent stuff
-├─────────────────┤
-│   Code Segment  │ ← The blueprint/instructions
-└─────────────────┘
-Low Memory (0x08048000)
-```
-
-**What QEMU does**: Creates this entire layout in the host's memory, then translates all addresses when the guest program accesses them.
-
----
-
-## Memory Layout
-
-::: {.callout-warning}
-### Security Note
-Memory mapping creates potential for **information disclosure** through side-channel attacks on shared address spaces.
-:::
 
 ---
 
