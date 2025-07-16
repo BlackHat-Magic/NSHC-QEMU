@@ -4,8 +4,9 @@ subtitle: "A Brief Explanation"
 author: "Luke Henderson"
 format:
   revealjs:
-    theme: default
-    css: custom.css
+    theme: dark
+    css: [custom.css, catppuccin-mocha.css]
+    highlight-style: monokai
     slide-number: true
     chalkboard: true
     preview-links: auto
@@ -267,13 +268,6 @@ typedef enum argtype {
 3. **Convert signal numbers** (SIGINT might be different numbers on different systems)
 4. **Convert signal information** (where did it happen, what was the program doing)
 5. **Deliver to guest** in the format it expects
-
-**Key structures**:
-```c
-typedef struct {
-    target_ulong sig[TARGET_NSIG_WORDS];  // Which signals are pending
-} target_sigset_t;
-```
 
 ---
 
